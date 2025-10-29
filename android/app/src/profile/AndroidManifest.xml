@@ -1,0 +1,46 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.flutter_test_pro">
+
+    <!-- 網路與定位權限（Geolocator + HTTP） -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
+    <application
+        android:name="${applicationName}"
+        android:label="flutter_test_pro"
+        android:icon="@mipmap/ic_launcher"
+
+        <!-- 允許 HTTP（開發用） -->
+        android:usesCleartextTraffic="true"
+
+        <!-- 指向 network_security_config.xml，允許連特定內網 IP -->
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- Google Maps 金鑰（建議用變數占位；見下方 local.properties 設定） -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
+        <!-- 你的 Flutter Activity；若你專案不是 .MainActivity，請改成你的 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>
+

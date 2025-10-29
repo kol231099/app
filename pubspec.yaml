@@ -1,0 +1,29 @@
+name: flutter_test_pro
+description: A new Flutter project.
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  lottie: ^3.1.2
+  google_maps_flutter: ^2.10.1
+  google_maps_flutter_platform_interface: ^2.10.1
+  geolocator: ^12.0.0
+  http: ^1.2.2
+  csv: ^6.0.0   # ← 新增，匯入 CSV 用
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/Globe.json
+    - assets/cleaned_restaurants.csv   # ← 新增 CSV 檔案
+    - assets/chat_loading.json
+version: 1.0.0+1
