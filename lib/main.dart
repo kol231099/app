@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -239,8 +240,8 @@ class AppWarmUp {
   }
 }
 
-const String kSearchEndpoint = 'http://172.20.10.14:8000/search';
-const String kSearchCosEndpoint = 'http://172.20.10.14:8000/search_cos';
+const String kSearchEndpoint = 'http://157.245.146.82/search';
+const String kSearchCosEndpoint = 'http://157.245.146.82/search_cos';
 
 class Place {
   final String name;
@@ -566,12 +567,16 @@ class _RouteOption {
   final String distanceText;
   final String durationText;
   final List<gm.LatLng> path;
+  final List<gm.LatLng> primaryPath;
+  final bool isPartial;
   final String polylineId;
   _RouteOption({
     required this.mode,
     required this.distanceText,
     required this.durationText,
     required this.path,
+    required this.primaryPath,
+    required this.isPartial,
     required this.polylineId,
   });
 
@@ -2253,9 +2258,10 @@ class _MapScreenState extends State<MapScreen> {
         (route['overview_polyline']?['points'] ?? '') as String;
     if (poly.isEmpty) return null;
 
-    final legs = route['legs'] as List;
+    final legs =
+        (route['legs'] as List).cast<Map<String, dynamic>>();
     if (legs.isEmpty) return null;
-    final leg0 = legs.first as Map<String, dynamic>;
+    final leg0 = legs.first;
     final distanceText = (leg0['distance']?['text'] ?? '') as String;
 
     String durationText;
@@ -2267,11 +2273,23 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final coords = _decodePolyline(poly);
+    final hasWaypoint = waypoints != null && waypoints.isNotEmpty;
+    List<gm.LatLng> primary = coords;
+    if (hasWaypoint) {
+      final trimmed = _clipPathAtWaypoint(coords, waypoints!.first);
+      if (trimmed.length >= 2) {
+        primary = trimmed;
+      }
+    }
     return _RouteOption(
       mode: mode,
       distanceText: distanceText,
       durationText: durationText,
       path: coords,
+      primaryPath: primary,
+      isPartial: hasWaypoint && (primary.length != coords.length ||
+          primary.last.latitude != coords.last.latitude ||
+          primary.last.longitude != coords.last.longitude),
       polylineId:
           'route_${mode}_${DateTime.now().millisecondsSinceEpoch}',
     );
@@ -2306,9 +2324,45 @@ class _MapScreenState extends State<MapScreen> {
 
       final latD = lat / 1e5;
       final lngD = lng / 1e5;
-      poly.add(gm.LatLng(latD, lngD));
+        poly.add(gm.LatLng(latD, lngD));
     }
     return poly;
+  }
+
+  double _distanceMeters(gm.LatLng a, gm.LatLng b) {
+    const double earthRadius = 6371000.0;
+    final double dLat = _degToRad(b.latitude - a.latitude);
+    final double dLng = _degToRad(b.longitude - a.longitude);
+    final double lat1 = _degToRad(a.latitude);
+    final double lat2 = _degToRad(b.latitude);
+    final double h = math.pow(math.sin(dLat / 2), 2) +
+        math.cos(lat1) * math.cos(lat2) * math.pow(math.sin(dLng / 2), 2);
+    return 2 * earthRadius * math.asin(math.sqrt(h));
+  }
+
+  double _degToRad(double deg) => deg * (math.pi / 180.0);
+
+  List<gm.LatLng> _clipPathAtWaypoint(List<gm.LatLng> path, gm.LatLng waypoint) {
+    if (path.isEmpty) return path;
+    int nearestIdx = 0;
+    double nearestDist = double.infinity;
+    for (int i = 0; i < path.length; i++) {
+      final d = _distanceMeters(path[i], waypoint);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestIdx = i;
+      }
+    }
+    if (nearestIdx == path.length - 1 && nearestDist > 50) {
+      return path;
+    }
+    final List<gm.LatLng> clipped =
+        List<gm.LatLng>.from(path.take(nearestIdx + 1));
+    final gm.LatLng last = clipped.last;
+    if (_distanceMeters(last, waypoint) > 5) {
+      clipped.add(waypoint);
+    }
+    return clipped;
   }
 
   Color _colorForMode(String mode, {required bool selected}) {
@@ -2330,6 +2384,8 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  List<gm.LatLng> _pathToDrawFor(_RouteOption opt) => opt.primaryPath;
+
   Future<void> _selectRoute(_RouteOption opt, {bool adjustCamera = true}) async {
     setState(() {
       _selectedRouteId = opt.polylineId;
@@ -2349,10 +2405,11 @@ class _MapScreenState extends State<MapScreen> {
     if (transit.mode != 'transit') transit = null;
 
     if (opt.mode == 'walking') {
+      final walkPath = _pathToDrawFor(opt);
       if (Platform.isAndroid) {
         final face = gm.Polyline(
           polylineId: gm.PolylineId('${opt.polylineId}_walk_face'),
-          points: opt.path,
+          points: walkPath,
           width: 6,
           color: _colorForMode('walking', selected: true),
           geodesic: true,
@@ -2365,7 +2422,7 @@ class _MapScreenState extends State<MapScreen> {
         setState(() => _polylines.add(face));
       } else {
         final dots =
-            _buildWalkingDots(opt.path, gapMeters: 80, radiusMeters: 28);
+            _buildWalkingDots(walkPath, gapMeters: 80, radiusMeters: 28);
         setState(() => _walkDots.addAll(dots));
       }
 
@@ -2376,7 +2433,9 @@ class _MapScreenState extends State<MapScreen> {
       for (final pl in _polylines) {
         allShown.addAll(pl.points);
       }
-      allShown.addAll(opt.path);
+      if (opt.isPartial) {
+        allShown.addAll(opt.path);
+      }
       if (adjustCamera && allShown.isNotEmpty) await _fitBoundsToPolyline(allShown);
       return;
     }
@@ -2393,6 +2452,9 @@ class _MapScreenState extends State<MapScreen> {
     for (final pl in _polylines) {
       allShown.addAll(pl.points);
     }
+    if (opt.isPartial) {
+      allShown.addAll(opt.path);
+    }
     if (adjustCamera && allShown.isNotEmpty) {
       await _fitBoundsToPolyline(allShown);
     }
@@ -2400,6 +2462,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _addOutlinedMainPolyline(_RouteOption opt) {
     final faceColor = _colorForMode(opt.mode, selected: true);
+    final drawPath = _pathToDrawFor(opt);
 
     final Color outlineColor = (opt.mode == 'transit')
         ? Colors.black.withValues(alpha: 0.9)
@@ -2407,7 +2470,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final outline = gm.Polyline(
       polylineId: gm.PolylineId('${opt.polylineId}_outline'),
-      points: opt.path,
+      points: drawPath,
       width: 10,
       color: outlineColor,
       geodesic: true,
@@ -2416,7 +2479,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final face = gm.Polyline(
       polylineId: gm.PolylineId('${opt.polylineId}_face'),
-      points: opt.path,
+      points: drawPath,
       width: 6,
       color: faceColor,
       geodesic: true,
@@ -2431,10 +2494,11 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _addDashedAltPolyline(_RouteOption opt, {int baseZ = 0}) {
+    final drawPath = _pathToDrawFor(opt);
     if (Platform.isAndroid) {
       final dashed = gm.Polyline(
         polylineId: gm.PolylineId('${opt.polylineId}_alt_dash'),
-        points: opt.path,
+        points: drawPath,
         width: 5,
         color: _colorForMode(opt.mode, selected: false),
         geodesic: true,
@@ -2448,7 +2512,7 @@ class _MapScreenState extends State<MapScreen> {
     } else {
       final faint = gm.Polyline(
         polylineId: gm.PolylineId('${opt.polylineId}_alt_faint'),
-        points: opt.path,
+        points: drawPath,
         width: 4,
         color:
             _colorForMode(opt.mode, selected: false).withOpacity(0.7),
@@ -2958,7 +3022,7 @@ class _ChatGPTPageState extends State<ChatGPTPage> {
         return;
       }
 
-      final uri = Uri.parse('http://172.20.10.14:8000/chat_route');
+      final uri = Uri.parse('http://157.245.146.82/chat_route');
       final resp = await http
           .post(
             uri,
