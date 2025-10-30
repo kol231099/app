@@ -1,1 +1,0 @@
- /Users/kol/development/projects/flutter_test_pro/.dart_tool/flutter_build/545e7f1fdf860c7b74a3555ed94fd34c/native_assets.json: 
