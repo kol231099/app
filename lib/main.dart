@@ -2273,10 +2273,12 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final coords = _decodePolyline(poly);
-    final hasWaypoint = waypoints != null && waypoints.isNotEmpty;
+    final wp = waypoints;
+    bool hasWaypoint = false;
     List<gm.LatLng> primary = coords;
-    if (hasWaypoint) {
-      final trimmed = _clipPathAtWaypoint(coords, waypoints!.first);
+    if (wp != null && wp.isNotEmpty) {
+      hasWaypoint = true;
+      final trimmed = _clipPathAtWaypoint(coords, wp.first);
       if (trimmed.length >= 2) {
         primary = trimmed;
       }
